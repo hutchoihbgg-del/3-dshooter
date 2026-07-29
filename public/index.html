@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tactical Arena - Multiplayer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script> 
+</head>
+<body>
+    <script>
+    // --- 1. CONNECT TO SERVER ---
+    const socket = io();
+    const networkPlayers = {}; // Store other players here
+    let myTeam = 'blue';
+
+    // --- 2. SETUP SCENE, CAMERA, RENDERER, MAP ---
+    // (Paste your existing map and lighting code here)
+
+    // --- 3. MULTIPLAYER LOGIC ---
+    
+    // When we connect, the server sends us everyone currently in the game
+    socket.on('currentPlayers', (players) => {
+        Object.keys(players).forEach((id) => {
+            if (id === socket.id) {
+                // This is us! Set our starting position
+                camera.position.set(players[id].x, players[id].y, players[id].z);
+                myTeam = players[id].team;
+            } else {
+                // This is someone else, add them to the scene
+                addOtherPlayer(id, players[id]);
+            }
+        });
+    });
+
+    // When a new player joins while we are already playing
+    socket.on('newPlayer', (playerInfo) => {
+        addOtherPlayer(playerInfo.id, playerInfo.player);
+    });
+
+    // When someone disconnects, remove their 3D model
+    socket.on('playerDisconnected', (id) => {
+        if (networkPlayers[id]) {
+            scene.remove(networkPlayers[id].mesh);
+            delete networkPlayers[id];
+        }
+    });
+
+    // When the server tells us someone moved
+    socket.on('playerMoved', (playerInfo) => {
+        if (networkPlayers[playerInfo.id]) {
+            // Smoothly interpolate later, but for now just snap them to position
+            networkPlayers[playerInfo.id].mesh.position.set(
+                playerInfo.position.x, 
+                playerInfo.position.y - 0.75, // adjust for cylinder height vs camera height
+                playerInfo.position.z
+            );
+        }
+    });
+
+    function addOtherPlayer(id, info) {
+        const geo = new THREE.CylinderGeometry(0.8, 0.8, 2.5, 8);
+        const mat = new THREE.MeshStandardMaterial({ color: info.team === 'blue' ? 0x3b82f6 : 0xef4444 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(info.x, info.y - 0.75, info.z);
+        scene.add(mesh);
+        networkPlayers[id] = { mesh: mesh, team: info.team };
+    }
+
+    // --- 4. SENDING OUR DATA TO SERVER ---
+    
+    let lastPosition = new THREE.Vector3();
+    
+    function animate() {
+        requestAnimationFrame(animate);
+        
+        // (Paste your player movement logic WASD here)
+
+        // If we moved, tell the server!
+        if (!camera.position.equals(lastPosition)) {
+            socket.emit('playerMovement', {
+                x: camera.position.x,
+                y: camera.position.y,
+                z: camera.position.z
+            });
+            lastPosition.copy(camera.position);
+        }
+
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
+</body>
+</html>
